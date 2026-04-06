@@ -40,6 +40,45 @@ async function searchCJ(token: string, keyword: string): Promise<CJProduct[]> {
   return []
 }
 
+// ─── Amazon via Apify e-commerce scraper ─────────────────────────────────────
+
+type AmazonProduct = { name?: string; title?: string; price?: string | number; rating?: number; reviewsCount?: number; url?: string }
+
+async function getAmazonProducts(keyword: string): Promise<AmazonProduct[]> {
+  const token = process.env.APIFY_TOKEN
+  if (!token) return []
+  try {
+    // Start async run
+    const startRes = await fetch(
+      `https://api.apify.com/v2/acts/apify~e-commerce-scraping-tool/runs?token=${token}&memory=256`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ keyword, marketplaces: ['www.amazon.com'], maxProductResults: 10, scrapeMode: 'AUTO' }),
+      }
+    )
+    if (!startRes.ok) return []
+    const run = await startRes.json()
+    const runId = run?.data?.id
+    if (!runId) return []
+
+    // Poll up to 50s
+    for (let i = 0; i < 5; i++) {
+      await new Promise(r => setTimeout(r, 10000))
+      const poll = await fetch(`https://api.apify.com/v2/actor-runs/${runId}?token=${token}`)
+      const pd = await poll.json()
+      if (pd?.data?.status === 'SUCCEEDED') {
+        const items = await fetch(`https://api.apify.com/v2/actor-runs/${runId}/dataset/items?token=${token}&limit=10`)
+        return await items.json()
+      }
+      if (['FAILED', 'ABORTED', 'TIMED-OUT'].includes(pd?.data?.status)) return []
+    }
+    return []
+  } catch {
+    return []
+  }
+}
+
 // ─── Google Trends via Firecrawl ─────────────────────────────────────────────
 
 async function getGoogleTrends(keyword: string): Promise<{ score: number; context: string }> {
@@ -89,10 +128,11 @@ export async function POST(req: NextRequest) {
   if (!keyword) return NextResponse.json({ error: 'Missing keyword' }, { status: 400 })
 
   try {
-    // Parallel: CJ token + Google Trends
-    const [token, trends] = await Promise.all([
+    // Parallel: CJ token + Google Trends + Amazon (Apify)
+    const [token, trends, amazonProducts] = await Promise.all([
       getCJToken(),
       getGoogleTrends(keyword),
+      getAmazonProducts(keyword),
     ])
 
     const rawProducts = await searchCJ(token, keyword)
@@ -101,7 +141,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ products: [], trends })
     }
 
-    // AI agent: combines CJ data + trends to score winning potential
+    // AI agent: combines CJ + Amazon + trends to score winning potential
     const forScoring = rawProducts.slice(0, 12).map(p => ({
       name: p.nameEn || p.name || '',
       price: p.sellPrice || p.nowPrice || '',
@@ -109,23 +149,29 @@ export async function POST(req: NextRequest) {
       category: p.threeCategoryName || p.twoCategoryName || '',
     }))
 
+    const amazonContext = amazonProducts.length > 0
+      ? `\nAmazon.com producten voor "${keyword}" (bewijs van markt):\n` +
+        amazonProducts.slice(0, 8).map((p: AmazonProduct) =>
+          `- ${p.name || p.title} | ${p.price ? '$' + p.price : ''} | ${p.rating ? p.rating + '★' : ''} | ${p.reviewsCount ? p.reviewsCount + ' reviews' : ''}`
+        ).join('\n')
+      : ''
+
     const scored = await anthropic.messages.create({
       model: 'claude-haiku-4-5-20251001',
       max_tokens: 1200,
       messages: [{
         role: 'user',
-        content: `Je bent een dropshipping AI agent. Analyseer deze producten voor de Nederlandse markt en geef elk product een "winScore" (1-10).
+        content: `Je bent een dropshipping AI agent. Analyseer deze CJ producten voor de Nederlandse markt en geef elk product een "winScore" (1-10).
 
-Signalen om mee te wegen:
-- Google Trends interesse in NL: ${trends.score}/100 — ${trends.context}
-- "listedByStores" = hoeveel dropshippers dit al verkopen (meer = bewezen, maar ook meer concurrentie)
-- Prijs: laag = makkelijker impulsaankoop, hoog = hogere marge
-- Is het product makkelijk te adverteren op TikTok/Instagram?
-- Heeft het een wow-factor of lost het een duidelijk probleem op?
+Signalen:
+- Google Trends NL: ${trends.score}/100 — ${trends.context}
+- "listedByStores" = hoeveel dropshippers dit al verkopen${amazonContext}
 
-Producten: ${JSON.stringify(forScoring)}
+Weeg mee: markt bewezen op Amazon? Goede marge? Impulsaankoop op TikTok/Meta? Wow-factor?
 
-Geef ALLEEN een JSON array terug:
+CJ Producten: ${JSON.stringify(forScoring)}
+
+Geef ALLEEN een JSON array:
 [{"name":"...","winScore":8,"reason":"1 zin waarom winnaar of niet"}]`,
       }],
     })
@@ -165,6 +211,13 @@ Geef ALLEEN een JSON array terug:
     return NextResponse.json({
       products: result,
       trends: { score: trends.score, context: trends.context },
+      amazonProducts: amazonProducts.slice(0, 8).map((p: AmazonProduct) => ({
+        name: p.name || p.title || '',
+        price: p.price,
+        rating: p.rating,
+        reviews: p.reviewsCount,
+        url: p.url,
+      })),
     })
   } catch (err) {
     console.error('Research error:', err)

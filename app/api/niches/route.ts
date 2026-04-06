@@ -55,7 +55,42 @@ async function getRedditDropshipping(): Promise<string> {
   }
 }
 
-// ─── Source 3: CJ Dropshipping — multi-category hot products ────────────────
+// ─── Source 3: ProductHunt — trending physical/consumer products ─────────────
+async function getProductHuntTrending(): Promise<string> {
+  const token = process.env.PRODUCTHUNT_TOKEN
+  if (!token) return ''
+  try {
+    // Query physical/consumer topics
+    const topics = ['wearables', 'health-and-fitness', 'gaming', 'home']
+    const results: string[] = []
+
+    for (const topic of topics) {
+      const res = await fetch('https://api.producthunt.com/v2/api/graphql', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          query: `{ posts(first: 6, topic: "${topic}", order: VOTES) { edges { node { name tagline votesCount } } } }`,
+        }),
+        signal: AbortSignal.timeout(8000),
+      })
+      const d = await res.json()
+      const posts = d?.data?.posts?.edges
+      if (posts?.length) {
+        const lines = posts
+          .map((e: { node: { name: string; tagline: string; votesCount: number } }) =>
+            `${e.node.name} — ${e.node.tagline} (${e.node.votesCount} votes)`
+          )
+          .join('\n')
+        results.push(`[${topic}]\n${lines}`)
+      }
+    }
+    return results.join('\n\n')
+  } catch {
+    return ''
+  }
+}
+
+// ─── Source 4: CJ Dropshipping — multi-category hot products ────────────────
 async function getCJMultiCategory(): Promise<string> {
   try {
     const authRes = await fetch('https://developers.cjdropshipping.com/api2.0/v1/authentication/getAccessToken', {
@@ -105,22 +140,25 @@ async function getCJMultiCategory(): Promise<string> {
 
 export async function GET() {
   try {
-    // All 3 sources in parallel
-    const [trends, reddit, cjProducts] = await Promise.all([
+    // All 4 sources in parallel
+    const [trends, reddit, productHunt, cjProducts] = await Promise.all([
       getGoogleTrendsNL(),
       getRedditDropshipping(),
+      getProductHuntTrending(),
       getCJMultiCategory(),
     ])
 
     const activeSources: string[] = []
     if (trends.topics.length > 0) activeSources.push('Google Trends NL')
     if (reddit.length > 100) activeSources.push('Reddit r/dropshipping')
+    if (productHunt.length > 100) activeSources.push('ProductHunt (wearables/health/gaming)')
     if (cjProducts.length > 100) activeSources.push('CJ Dropshipping (8 categorieën)')
 
     const prompt = `Je bent een dropshipping expert voor de Nederlandse markt. Analyseer deze real-time marktdata en geef de 10 beste dropshipping niches.
 
 ${trends.topics.length > 0 ? `### Google Trends NL — wat Nederlanders vandaag zoeken\n${trends.raw}\n` : ''}
 ${reddit.length > 100 ? `### Reddit r/dropshipping — wat dropshippers nu succesvol verkopen\n${reddit}\n` : ''}
+${productHunt.length > 100 ? `### ProductHunt trending — consumer tech & gadget producten\n${productHunt}\n` : ''}
 ${cjProducts.length > 100 ? `### CJ Dropshipping — meest beschikbare producten per categorie\n${cjProducts}\n` : ''}
 
 Criteria voor een goede niche voor NL:

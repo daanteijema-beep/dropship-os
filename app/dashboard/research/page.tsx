@@ -18,6 +18,7 @@ type Product = {
 }
 
 type TrendsData = { score: number; context: string }
+type AmazonProduct = { name: string; price?: string | number; rating?: number; reviews?: number; url?: string }
 
 function ResearchContent() {
   const router = useRouter()
@@ -26,6 +27,7 @@ function ResearchContent() {
   const [loading, setLoading] = useState(false)
   const [products, setProducts] = useState<Product[]>([])
   const [trends, setTrends] = useState<TrendsData | null>(null)
+  const [amazonProducts, setAmazonProducts] = useState<AmazonProduct[]>([])
   const [error, setError] = useState('')
 
   useEffect(() => {
@@ -55,6 +57,7 @@ function ResearchContent() {
       if (data.error) { setError(data.error); return }
       setProducts(data.products || [])
       setTrends(data.trends || null)
+      setAmazonProducts(data.amazonProducts || [])
     } catch {
       setError('Research mislukt — check console')
     } finally {
@@ -116,6 +119,25 @@ function ResearchContent() {
               className="bg-emerald-500 h-2 rounded-full transition-all"
               style={{ width: `${trends.score}%` }}
             />
+          </div>
+        </div>
+      )}
+
+      {/* Amazon reference panel */}
+      {amazonProducts.length > 0 && (
+        <div className="mb-6 bg-zinc-900 border border-zinc-800 rounded-xl p-4">
+          <p className="text-xs font-medium text-zinc-400 mb-3 uppercase tracking-wider">Amazon.com — marktbewijs voor &quot;{keyword}&quot;</p>
+          <div className="space-y-1.5">
+            {amazonProducts.map((p, i) => (
+              <div key={i} className="flex items-center gap-3 text-xs">
+                <span className="text-zinc-600 w-4">{i + 1}.</span>
+                <span className="flex-1 text-zinc-300 truncate">{p.name}</span>
+                {p.price && <span className="text-zinc-500 flex-shrink-0">${p.price}</span>}
+                {p.rating && <span className="text-yellow-500 flex-shrink-0">{p.rating}★</span>}
+                {p.reviews && <span className="text-zinc-600 flex-shrink-0">{p.reviews.toLocaleString()} reviews</span>}
+                {p.url && <a href={p.url} target="_blank" className="text-zinc-600 hover:text-zinc-400 flex-shrink-0">↗</a>}
+              </div>
+            ))}
           </div>
         </div>
       )}
