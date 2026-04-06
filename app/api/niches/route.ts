@@ -48,7 +48,8 @@ async function getRedditDropshipping(): Promise<string> {
       .filter(p => p.title.length > 10)
 
     return posts
-      .map(p => `[score:${p.score}] ${p.title}${p.text ? ' — ' + p.text : ''}`)
+      .slice(0, 15)
+      .map(p => `[${p.score}] ${p.title.slice(0, 80)}`)
       .join('\n')
   } catch {
     return ''
@@ -186,13 +187,26 @@ Geef ALLEEN de JSON array terug.`
 
     const msg = await anthropic.messages.create({
       model: 'claude-sonnet-4-6',
-      max_tokens: 2500,
+      max_tokens: 3500,
       messages: [{ role: 'user', content: prompt }],
     })
 
     const text = (msg.content[0] as { text: string }).text
-    const clean = text.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/\s*```$/i, '').trim()
-    const niches = JSON.parse(clean)
+
+    // Robust JSON extraction — find the array even if surrounded by text
+    const arrayMatch = text.match(/\[[\s\S]*\]/)
+    if (!arrayMatch) throw new Error('Geen JSON array gevonden in response')
+    let jsonStr = arrayMatch[0]
+
+    // Fix truncated JSON: if array isn't properly closed, close it
+    const openBraces = (jsonStr.match(/\{/g) || []).length
+    const closeBraces = (jsonStr.match(/\}/g) || []).length
+    if (openBraces > closeBraces) {
+      jsonStr = jsonStr.trimEnd().replace(/,?\s*$/, '') + '}'
+      if (!jsonStr.endsWith(']')) jsonStr += ']'
+    }
+
+    const niches = JSON.parse(jsonStr)
 
     return NextResponse.json({ niches, sources: activeSources, generatedAt: new Date().toISOString() })
   } catch (err) {
