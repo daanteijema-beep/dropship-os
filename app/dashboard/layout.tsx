@@ -1,9 +1,10 @@
 import Link from 'next/link'
-import { BarChart2, Search, Package, Megaphone, Store, Settings } from 'lucide-react'
+import { BarChart2, Search, Package, Megaphone, Store, Settings, Rocket } from 'lucide-react'
 
 const nav = [
   { href: '/dashboard', label: 'Overzicht', icon: BarChart2 },
   { href: '/dashboard/research', label: 'Research', icon: Search },
+  { href: '/dashboard/launch', label: 'Launch Studio', icon: Rocket },
   { href: '/dashboard/products', label: 'Producten', icon: Package },
   { href: '/dashboard/marketing', label: 'Marketing', icon: Megaphone },
   { href: '/dashboard/stores', label: 'Stores', icon: Store },
@@ -17,7 +18,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       <aside className="w-56 flex-shrink-0 border-r border-zinc-800 flex flex-col">
         <div className="p-5 border-b border-zinc-800">
           <h1 className="text-lg font-bold text-white tracking-tight">Dropship OS</h1>
-          <p className="text-xs text-zinc-500 mt-0.5">Wellness Gadgets</p>
+          <p className="text-xs text-zinc-500 mt-0.5">Winnende Producten</p>
         </div>
         <nav className="flex-1 p-3 space-y-1">
           {nav.map(({ href, label, icon: Icon }) => (

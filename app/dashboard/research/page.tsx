@@ -1,6 +1,7 @@
 'use client'
 import { useState } from 'react'
-import { Search, TrendingUp, Loader2, Star, ShoppingCart, Zap } from 'lucide-react'
+import { useRouter } from 'next/navigation'
+import { Search, TrendingUp, Loader2, Star, ShoppingCart, Zap, Rocket } from 'lucide-react'
 
 type Product = {
   id: string
@@ -19,11 +20,16 @@ type Product = {
 type TrendsData = { score: number; context: string }
 
 export default function ResearchPage() {
+  const router = useRouter()
   const [keyword, setKeyword] = useState('')
   const [loading, setLoading] = useState(false)
   const [products, setProducts] = useState<Product[]>([])
   const [trends, setTrends] = useState<TrendsData | null>(null)
   const [error, setError] = useState('')
+
+  function launchProduct(p: Product) {
+    router.push(`/dashboard/launch?product=${encodeURIComponent(JSON.stringify(p))}`)
+  }
 
   async function runResearch() {
     if (!keyword.trim()) return
@@ -114,7 +120,7 @@ export default function ResearchPage() {
             <p className="text-sm font-medium text-yellow-400">Top picks ({topPicks.length})</p>
           </div>
           <div className="space-y-2">
-            {topPicks.map((p, i) => <ProductRow key={i} p={p} highlight />)}
+            {topPicks.map((p, i) => <ProductRow key={i} p={p} highlight onLaunch={launchProduct} />)}
           </div>
         </div>
       )}
@@ -123,7 +129,7 @@ export default function ResearchPage() {
       {products.length > 0 && (
         <div className="space-y-2">
           <p className="text-sm text-zinc-500">{products.length} producten — gesorteerd op win score</p>
-          {products.filter(p => p.trendScore < 8).map((p, i) => <ProductRow key={i} p={p} />)}
+          {products.filter(p => p.trendScore < 8).map((p, i) => <ProductRow key={i} p={p} onLaunch={launchProduct} />)}
         </div>
       )}
 
@@ -138,7 +144,7 @@ export default function ResearchPage() {
   )
 }
 
-function ProductRow({ p, highlight = false }: { p: Product; highlight?: boolean }) {
+function ProductRow({ p, highlight = false, onLaunch }: { p: Product; highlight?: boolean; onLaunch: (p: Product) => void }) {
   return (
     <div className={`border rounded-xl p-4 flex items-center gap-4 ${highlight ? 'bg-yellow-500/5 border-yellow-500/20' : 'bg-zinc-900 border-zinc-800'}`}>
       {p.image ? (
@@ -157,14 +163,21 @@ function ProductRow({ p, highlight = false }: { p: Product; highlight?: boolean 
           {p.category && <span className="text-xs text-zinc-700">{p.category}</span>}
         </div>
       </div>
-      <div className="flex items-center gap-3 flex-shrink-0">
-        <div className="text-center">
+      <div className="flex items-center gap-2 flex-shrink-0">
+        <div className="text-center mr-1">
           <div className="flex items-center gap-1">
             <Star size={12} className="text-yellow-400 fill-yellow-400" />
             <span className="text-sm font-bold text-yellow-400">{p.trendScore}</span>
           </div>
-          <p className="text-xs text-zinc-600">win score</p>
+          <p className="text-xs text-zinc-600">win</p>
         </div>
+        <button
+          onClick={() => onLaunch(p)}
+          className="flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-500 text-white px-3 py-1.5 rounded-lg text-xs transition-colors font-medium"
+        >
+          <Rocket size={12} />
+          Launch
+        </button>
         <button className="flex items-center gap-1.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 px-3 py-1.5 rounded-lg text-xs transition-colors">
           <ShoppingCart size={12} />
           Import
