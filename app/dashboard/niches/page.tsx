@@ -14,11 +14,13 @@ type Niche = {
   trend: 'rising' | 'stable' | 'seasonal'
   avgMargin: string
   targetAudience: string
+  priceRange?: string
 }
 
-type DataSource = {
-  googleTrends: boolean
-  cjCategories: boolean
+type NicheResult = {
+  niches: Niche[]
+  sources: string[]
+  generatedAt: string
 }
 
 const trendIcon = {
@@ -43,7 +45,7 @@ export default function NichesPage() {
   const router = useRouter()
   const [loading, setLoading] = useState(false)
   const [niches, setNiches] = useState<Niche[]>([])
-  const [dataSource, setDataSource] = useState<DataSource | null>(null)
+  const [sources, setSources] = useState<string[]>([])
   const [generatedAt, setGeneratedAt] = useState('')
   const [error, setError] = useState('')
 
@@ -52,11 +54,11 @@ export default function NichesPage() {
     setError('')
     try {
       const res = await fetch('/api/niches')
-      const data = await res.json()
+      const data: NicheResult & { error?: string } = await res.json()
       if (data.error) { setError(data.error); return }
       setNiches(data.niches || [])
-      setDataSource(data.dataSource)
-      setGeneratedAt(data.generatedAt)
+      setSources(data.sources || [])
+      setGeneratedAt(data.generatedAt || '')
     } catch {
       setError('Niches ophalen mislukt')
     } finally {
@@ -78,7 +80,7 @@ export default function NichesPage() {
       <div className="mb-8 flex items-start justify-between">
         <div>
           <h2 className="text-2xl font-bold text-white">Niche Finder</h2>
-          <p className="text-zinc-400 mt-1">AI analyseert Google Trends NL + CJ categorieën → beste niches nu</p>
+          <p className="text-zinc-400 mt-1">Scrapet Amazon.nl · Bol.com · AliExpress · CJ → AI vindt beste niches voor NL</p>
         </div>
         <button
           onClick={load}
@@ -91,18 +93,16 @@ export default function NichesPage() {
       </div>
 
       {/* Data sources */}
-      {dataSource && (
-        <div className="flex gap-3 mb-6">
-          <div className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full border ${dataSource.googleTrends ? 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20' : 'text-zinc-600 bg-zinc-800/50 border-zinc-700'}`}>
-            <CheckCircle size={11} />
-            Google Trends NL
-          </div>
-          <div className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full border ${dataSource.cjCategories ? 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20' : 'text-zinc-600 bg-zinc-800/50 border-zinc-700'}`}>
-            <CheckCircle size={11} />
-            CJ Categorieën
-          </div>
+      {sources.length > 0 && (
+        <div className="flex flex-wrap gap-2 mb-6">
+          {sources.map(s => (
+            <div key={s} className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full border text-emerald-400 bg-emerald-500/10 border-emerald-500/20">
+              <CheckCircle size={11} />
+              {s}
+            </div>
+          ))}
           {generatedAt && (
-            <span className="text-xs text-zinc-600 flex items-center">
+            <span className="text-xs text-zinc-600 flex items-center px-2">
               {new Date(generatedAt).toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit' })}
             </span>
           )}
@@ -112,8 +112,8 @@ export default function NichesPage() {
       {loading && (
         <div className="text-center py-20 text-zinc-500">
           <Loader2 size={28} className="animate-spin mx-auto mb-4" />
-          <p className="text-sm">AI analyseert trending niches...</p>
-          <p className="text-xs mt-1 text-zinc-600">Combineert Google Trends + CJ data</p>
+          <p className="text-sm">Marktdata ophalen + AI analyse...</p>
+          <p className="text-xs mt-1 text-zinc-600">Scrapet Amazon.nl, Bol.com, AliExpress, CJ — duurt ~20 sec</p>
         </div>
       )}
 
@@ -183,6 +183,11 @@ function NicheCard({ niche, onResearch }: { niche: Niche; onResearch: (kw: strin
         <div className="text-xs text-zinc-500">
           Marge: <span className="text-emerald-400 font-medium">{niche.avgMargin}</span>
         </div>
+        {niche.priceRange && (
+          <div className="text-xs text-zinc-500">
+            Prijs: <span className="text-zinc-300">{niche.priceRange}</span>
+          </div>
+        )}
         <div className="text-xs text-zinc-600 font-mono bg-zinc-800 px-2 py-0.5 rounded">
           {niche.keyword}
         </div>

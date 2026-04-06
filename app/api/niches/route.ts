@@ -3,32 +3,25 @@ import Anthropic from '@anthropic-ai/sdk'
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! })
 
-// Scrape Google Trends trending searches in NL
-async function getTrendingSearches(): Promise<string> {
+async function firecrawlScrape(url: string, waitFor = 2000): Promise<string> {
   const apiKey = process.env.FIRECRAWL_API_KEY
   if (!apiKey) return ''
-
   try {
     const res = await fetch('https://api.firecrawl.dev/v1/scrape', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
-      body: JSON.stringify({
-        url: 'https://trends.google.com/trending?geo=NL&hours=48',
-        formats: ['markdown'],
-        waitFor: 4000,
-      }),
-      signal: AbortSignal.timeout(25000),
+      body: JSON.stringify({ url, formats: ['markdown'], waitFor }),
+      signal: AbortSignal.timeout(20000),
     })
     if (!res.ok) return ''
     const data = await res.json()
-    return (data?.data?.markdown || data?.markdown || '').slice(0, 3000)
+    return (data?.data?.markdown || data?.markdown || '').slice(0, 2500)
   } catch {
     return ''
   }
 }
 
-// Get CJ top categories
-async function getCJCategories(): Promise<string[]> {
+async function getCJHotProducts(): Promise<string> {
   try {
     const authRes = await fetch('https://developers.cjdropshipping.com/api2.0/v1/authentication/getAccessToken', {
       method: 'POST',
@@ -36,75 +29,104 @@ async function getCJCategories(): Promise<string[]> {
       body: JSON.stringify({ apiKey: process.env.CJ_API_KEY! }),
     })
     const authData = await authRes.json()
-    if (!authData?.result) return []
+    if (!authData?.result) return ''
     const token = authData.data.accessToken
 
-    const catRes = await fetch('https://developers.cjdropshipping.com/api2.0/v1/product/getCategory', {
+    // Fetch hot/trending products — sorted by listedNum (most dropshipped = proven demand)
+    const params = new URLSearchParams({ page: '1', size: '30', sortField: 'listedNum', sortType: 'DESC' })
+    const res = await fetch(`https://developers.cjdropshipping.com/api2.0/v1/product/listV2?${params}`, {
       headers: { 'CJ-Access-Token': token },
     })
-    const catData = await catRes.json()
-    if (!catData?.result) return []
+    const data = await res.json()
+    if (!data?.result) return ''
 
-    // Extract first-level category names
-    const cats = catData.data || []
-    return cats.slice(0, 30).map((c: { categoryName?: string; categoryNameEn?: string }) =>
-      c.categoryNameEn || c.categoryName || ''
-    ).filter(Boolean)
+    const content = data.data?.content
+    let products = []
+    if (Array.isArray(content) && content[0]?.productList) products = content[0].productList
+    else if (Array.isArray(content)) products = content
+    else if (content?.productList) products = content.productList
+
+    return products
+      .slice(0, 20)
+      .map((p: { nameEn?: string; name?: string; sellPrice?: string; listedNum?: number; threeCategoryName?: string }) =>
+        `${p.nameEn || p.name} | prijs: $${p.sellPrice} | in ${p.listedNum} stores | cat: ${p.threeCategoryName || ''}`
+      )
+      .join('\n')
   } catch {
-    return []
+    return ''
   }
 }
 
 export async function GET() {
   try {
-    // Parallel: trending searches + CJ categories
-    const [trendingRaw, cjCategories] = await Promise.all([
-      getTrendingSearches(),
-      getCJCategories(),
+    // Scrape multiple real market signals in parallel
+    const [amazonElectronics, amazonHealth, bolGadgets, aliExpressTrending, cjHot] = await Promise.all([
+      firecrawlScrape('https://www.amazon.nl/gp/bestsellers/electronics/', 3000),
+      firecrawlScrape('https://www.amazon.nl/gp/bestsellers/hpc/', 3000),
+      firecrawlScrape('https://www.bol.com/nl/nl/l/alle-gadgets/N/9200000114925480+8299/', 2000),
+      firecrawlScrape('https://www.aliexpress.com/w/wholesale-trending-products.html', 3000),
+      getCJHotProducts(),
     ])
 
-    // Claude analyzes all signals and suggests the best niches
+    const sources: Record<string, string> = {
+      'Amazon NL Electronics Bestsellers': amazonElectronics,
+      'Amazon NL Health & Care Bestsellers': amazonHealth,
+      'Bol.com Gadgets Top': bolGadgets,
+      'AliExpress Trending': aliExpressTrending,
+      'CJ Dropshipping Meest Gekopieerde Producten': cjHot,
+    }
+
+    const sourceSummary = Object.entries(sources)
+      .filter(([, v]) => v.length > 50)
+      .map(([k, v]) => `### ${k}\n${v}`)
+      .join('\n\n')
+
+    const availableSources = Object.entries(sources)
+      .filter(([, v]) => v.length > 50)
+      .map(([k]) => k)
+
     const msg = await anthropic.messages.create({
       model: 'claude-sonnet-4-6',
-      max_tokens: 2000,
+      max_tokens: 2500,
       messages: [{
         role: 'user',
-        content: `Je bent een dropshipping niche expert. Analyseer de volgende data en geef de beste niches voor dropshipping in Nederland.
+        content: `Je bent een dropshipping expert. Analyseer deze echte marktdata en geef de 10 beste dropshipping niches voor Nederland.
 
-${trendingRaw ? `Google Trends trending zoekterm NL (afgelopen 48 uur):\n${trendingRaw}\n` : ''}
-${cjCategories.length ? `Beschikbare CJ Dropshipping categorieën:\n${cjCategories.join(', ')}\n` : ''}
+${sourceSummary}
 
-Criteria voor een goede dropshipping niche:
-- Impulsaankoop mogelijk (niet te duur, max €100)
-- Hoge perceived value (marge 60-75%)
-- Makkelijk te adverteren op TikTok/Meta
-- Oplost een duidelijk probleem OF is een trending gadget/lifestyle item
+Criteria voor een goede niche:
+- Producten die je voor €5-30 inkoopt en voor €25-100 verkoopt (60-75% marge)
+- Impulsaankoop via TikTok of Meta advertentie
+- Oplost een probleem OF heeft wow-factor
 - Beschikbaar via CJ Dropshipping
-- Groeiende trend (liefst niet seizoensgebonden)
+- Niet te mainstream (nog ruimte voor nieuwe spelers)
 
-Geef 10 concrete niches met elk:
-- name: korte niche naam (bijv. "Red Light Therapy", "Posture Correctors")
-- keyword: het beste CJ zoekwoord voor deze niche
-- why: 1 zin waarom dit nu kansrijk is
-- opportunityScore: 1-10 (10 = hoogste kans)
-- trend: "rising" | "stable" | "seasonal"
-- avgMargin: geschatte marge % (bijv. "65%")
-- targetAudience: korte omschrijving doelgroep
+Baseer je antwoord ALLEEN op wat je ziet in de data hierboven — welke productcategorieën/niches scoren goed op meerdere platforms?
 
-Antwoord ALLEEN als JSON array:
-[{"name":"...","keyword":"...","why":"...","opportunityScore":8,"trend":"rising","avgMargin":"68%","targetAudience":"..."}]`,
+Geef 10 niches als JSON array:
+[{
+  "name": "korte naam (bijv. 'Massage Guns')",
+  "keyword": "CJ zoekwoord in het Engels",
+  "why": "1 concrete zin gebaseerd op de data (bijv. 'Staat #3 op Amazon NL health + meest gekopieerd op CJ')",
+  "opportunityScore": 8,
+  "trend": "rising" | "stable" | "seasonal",
+  "avgMargin": "68%",
+  "targetAudience": "kort (bijv. '25-45 jaar, sport/wellness)'",
+  "priceRange": "€29-€79"
+}]
+
+Geef ALLEEN de JSON array terug, geen uitleg eromheen.`,
       }],
     })
 
     const text = (msg.content[0] as { text: string }).text
-    const niches = JSON.parse(text)
+    // Strip markdown code blocks if present
+    const clean = text.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/\s*```$/i, '').trim()
+    const niches = JSON.parse(clean)
 
     return NextResponse.json({
       niches,
-      dataSource: {
-        googleTrends: !!trendingRaw,
-        cjCategories: cjCategories.length > 0,
-      },
+      sources: availableSources,
       generatedAt: new Date().toISOString(),
     })
   } catch (err) {
