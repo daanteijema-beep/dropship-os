@@ -15,6 +15,7 @@ type Niche = {
   avgMargin: string
   targetAudience: string
   priceRange?: string
+  dataSignals?: string[]
 }
 
 type NicheResult = {
@@ -80,7 +81,7 @@ export default function NichesPage() {
       <div className="mb-8 flex items-start justify-between">
         <div>
           <h2 className="text-2xl font-bold text-white">Niche Finder</h2>
-          <p className="text-zinc-400 mt-1">Scrapet Amazon.nl · Bol.com · AliExpress · CJ → AI vindt beste niches voor NL</p>
+          <p className="text-zinc-400 mt-1">Google Trends NL · Reddit r/dropshipping · CJ Dropshipping → AI vindt beste niches voor NL</p>
         </div>
         <button
           onClick={load}
@@ -113,7 +114,7 @@ export default function NichesPage() {
         <div className="text-center py-20 text-zinc-500">
           <Loader2 size={28} className="animate-spin mx-auto mb-4" />
           <p className="text-sm">Marktdata ophalen + AI analyse...</p>
-          <p className="text-xs mt-1 text-zinc-600">Scrapet Amazon.nl, Bol.com, AliExpress, CJ — duurt ~20 sec</p>
+          <p className="text-xs mt-1 text-zinc-600">Google Trends NL + Reddit + CJ — duurt ~15 sec</p>
         </div>
       )}
 
@@ -193,6 +194,13 @@ function NicheCard({ niche, onResearch }: { niche: Niche; onResearch: (kw: strin
         </div>
       </div>
 
+      {niche.dataSignals && niche.dataSignals.length > 0 && (
+        <div className="flex flex-wrap gap-1.5 mb-3">
+          {niche.dataSignals.map(s => (
+            <span key={s} className="text-xs bg-zinc-800 text-zinc-500 px-2 py-0.5 rounded-full">{s}</span>
+          ))}
+        </div>
+      )}
       <button
         onClick={() => onResearch(niche.keyword)}
         className="w-full flex items-center justify-center gap-2 bg-zinc-800 hover:bg-emerald-600 text-zinc-300 hover:text-white py-2 rounded-lg text-xs font-medium transition-colors"
