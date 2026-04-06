@@ -2,8 +2,8 @@
 import { useEffect, useState, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 import {
-  Loader2, Rocket, Globe, Megaphone, Video, Instagram,
-  Copy, Check, ExternalLink, ChevronDown, ChevronUp
+  Loader2, Rocket, Globe, Megaphone, Video,
+  Copy, Check, ExternalLink, ChevronDown, ChevronUp, Camera
 } from 'lucide-react'
 
 type Product = {
@@ -194,7 +194,7 @@ function LaunchContent() {
             content={data.tiktokScript}
           />
           <Section
-            icon={<Instagram size={14} className="text-pink-400" />}
+            icon={<Camera size={14} className="text-pink-400" />}
             title="Instagram Caption"
             content={data.instagramCaption}
           />
