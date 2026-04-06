@@ -32,8 +32,33 @@ function ResearchContent() {
 
   useEffect(() => {
     const kw = params.get('keyword')
+    const autorun = params.get('autorun')
     if (kw) {
       setKeyword(kw)
+      if (autorun === '1') {
+        // Trigger search automatically
+        setTimeout(() => {
+          setLoading(true)
+          setError('')
+          setProducts([])
+          setTrends(null)
+          setAmazonProducts([])
+          fetch('/api/research', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ keyword: kw }),
+          })
+            .then(r => r.json())
+            .then(data => {
+              if (data.error) { setError(data.error); return }
+              setProducts(data.products || [])
+              setTrends(data.trends || null)
+              setAmazonProducts(data.amazonProducts || [])
+            })
+            .catch(() => setError('Research mislukt'))
+            .finally(() => setLoading(false))
+        }, 100)
+      }
     }
   }, [params])
 

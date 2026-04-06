@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   Compass, Loader2, TrendingUp, TrendingDown, Minus,
-  Search, RefreshCw, Zap, CheckCircle
+  Search, RefreshCw, Zap, CheckCircle, Clock
 } from 'lucide-react'
 
 type Niche = {
@@ -24,17 +24,16 @@ type NicheResult = {
   generatedAt: string
 }
 
+const CACHE_KEY = 'dropship_niches_cache'
+const CACHE_TTL = 6 * 60 * 60 * 1000 // 6 hours
+
 const trendIcon = {
   rising: <TrendingUp size={13} className="text-emerald-400" />,
   stable: <Minus size={13} className="text-zinc-400" />,
   seasonal: <TrendingDown size={13} className="text-yellow-400" />,
 }
 
-const trendLabel = {
-  rising: 'Stijgend',
-  stable: 'Stabiel',
-  seasonal: 'Seizoens',
-}
+const trendLabel = { rising: 'Stijgend', stable: 'Stabiel', seasonal: 'Seizoens' }
 
 const scoreColor = (s: number) => {
   if (s >= 8) return 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20'
@@ -48,18 +47,47 @@ export default function NichesPage() {
   const [niches, setNiches] = useState<Niche[]>([])
   const [sources, setSources] = useState<string[]>([])
   const [generatedAt, setGeneratedAt] = useState('')
+  const [fromCache, setFromCache] = useState(false)
   const [error, setError] = useState('')
 
-  async function load() {
+  function loadFromCache(): NicheResult | null {
+    try {
+      const raw = localStorage.getItem(CACHE_KEY)
+      if (!raw) return null
+      const cached: NicheResult & { cachedAt: number } = JSON.parse(raw)
+      if (Date.now() - cached.cachedAt > CACHE_TTL) return null
+      return cached
+    } catch { return null }
+  }
+
+  function saveToCache(data: NicheResult) {
+    try {
+      localStorage.setItem(CACHE_KEY, JSON.stringify({ ...data, cachedAt: Date.now() }))
+    } catch { /* ignore */ }
+  }
+
+  function applyResult(data: NicheResult, cached = false) {
+    setNiches(data.niches || [])
+    setSources(data.sources || [])
+    setGeneratedAt(data.generatedAt || '')
+    setFromCache(cached)
+  }
+
+  async function load(force = false) {
+    // Use cache unless forced refresh
+    if (!force) {
+      const cached = loadFromCache()
+      if (cached) { applyResult(cached, true); return }
+    }
+
     setLoading(true)
     setError('')
     try {
       const res = await fetch('/api/niches')
       const data: NicheResult & { error?: string } = await res.json()
       if (data.error) { setError(data.error); return }
-      setNiches(data.niches || [])
-      setSources(data.sources || [])
-      setGeneratedAt(data.generatedAt || '')
+      applyResult(data, false)
+      saveToCache(data)
     } catch {
       setError('Niches ophalen mislukt')
     } finally {
@@ -69,8 +97,9 @@ export default function NichesPage() {
 
   useEffect(() => { load() }, [])
 
+  // Navigate to Research and auto-run
   function goResearch(keyword: string) {
-    router.push(`/dashboard/research?keyword=${encodeURIComponent(keyword)}`)
+    router.push(`/dashboard/research?keyword=${encodeURIComponent(keyword)}&autorun=1`)
   }
 
   const topNiches = niches.filter(n => n.opportunityScore >= 8)
@@ -78,13 +107,13 @@ export default function NichesPage() {
 
   return (
     <div className="p-8">
-      <div className="mb-8 flex items-start justify-between">
+      <div className="mb-6 flex items-start justify-between">
         <div>
           <h2 className="text-2xl font-bold text-white">Niche Finder</h2>
-          <p className="text-zinc-400 mt-1">Google Trends NL · Reddit r/dropshipping · CJ Dropshipping → AI vindt beste niches voor NL</p>
+          <p className="text-zinc-400 mt-1">Google Trends NL · Reddit · ProductHunt · CJ → klik een niche om direct producten te zien</p>
         </div>
         <button
-          onClick={load}
+          onClick={() => load(true)}
           disabled={loading}
           className="flex items-center gap-2 bg-zinc-800 hover:bg-zinc-700 disabled:opacity-50 text-zinc-300 px-4 py-2 rounded-lg text-sm transition-colors"
         >
@@ -93,19 +122,20 @@ export default function NichesPage() {
         </button>
       </div>
 
-      {/* Data sources */}
-      {sources.length > 0 && (
+      {/* Sources + cache status */}
+      {(sources.length > 0 || fromCache) && (
         <div className="flex flex-wrap gap-2 mb-6">
           {sources.map(s => (
             <div key={s} className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full border text-emerald-400 bg-emerald-500/10 border-emerald-500/20">
-              <CheckCircle size={11} />
-              {s}
+              <CheckCircle size={11} /> {s}
             </div>
           ))}
           {generatedAt && (
-            <span className="text-xs text-zinc-600 flex items-center px-2">
-              {new Date(generatedAt).toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit' })}
-            </span>
+            <div className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full border ${fromCache ? 'text-zinc-500 bg-zinc-800/50 border-zinc-700' : 'text-zinc-400 bg-zinc-800 border-zinc-700'}`}>
+              <Clock size={11} />
+              {fromCache ? 'Opgeslagen · ' : 'Vernieuwd · '}
+              {new Date(generatedAt).toLocaleString('nl-NL', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+            </div>
           )}
         </div>
       )}
@@ -119,14 +149,11 @@ export default function NichesPage() {
       )}
 
       {error && (
-        <div className="bg-red-500/10 border border-red-500/30 rounded-xl px-4 py-3 text-red-400 text-sm">
-          {error}
-        </div>
+        <div className="bg-red-500/10 border border-red-500/30 rounded-xl px-4 py-3 text-red-400 text-sm">{error}</div>
       )}
 
       {!loading && niches.length > 0 && (
         <>
-          {/* Top picks */}
           {topNiches.length > 0 && (
             <div className="mb-8">
               <div className="flex items-center gap-2 mb-4">
@@ -138,8 +165,6 @@ export default function NichesPage() {
               </div>
             </div>
           )}
-
-          {/* Other niches */}
           {otherNiches.length > 0 && (
             <div>
               <h3 className="text-sm font-medium text-zinc-500 uppercase tracking-wider mb-4">Overige niches</h3>
@@ -154,7 +179,7 @@ export default function NichesPage() {
       {!loading && niches.length === 0 && !error && (
         <div className="text-center py-20 text-zinc-600">
           <Compass size={40} className="mx-auto mb-3 opacity-30" />
-          <p>Klik op Vernieuwen om niches te laden</p>
+          <p>Laden...</p>
         </div>
       )}
     </div>
@@ -174,12 +199,11 @@ function NicheCard({ niche, onResearch }: { niche: Niche; onResearch: (kw: strin
         </div>
       </div>
 
-      <p className="text-xs text-zinc-400 mb-4 leading-relaxed">{niche.why}</p>
+      <p className="text-xs text-zinc-400 mb-3 leading-relaxed">{niche.why}</p>
 
-      <div className="flex items-center gap-3 mb-4 flex-wrap">
+      <div className="flex items-center gap-3 mb-3 flex-wrap">
         <div className="flex items-center gap-1 text-xs text-zinc-500">
-          {trendIcon[niche.trend]}
-          <span>{trendLabel[niche.trend]}</span>
+          {trendIcon[niche.trend]} <span>{trendLabel[niche.trend]}</span>
         </div>
         <div className="text-xs text-zinc-500">
           Marge: <span className="text-emerald-400 font-medium">{niche.avgMargin}</span>
@@ -189,9 +213,6 @@ function NicheCard({ niche, onResearch }: { niche: Niche; onResearch: (kw: strin
             Prijs: <span className="text-zinc-300">{niche.priceRange}</span>
           </div>
         )}
-        <div className="text-xs text-zinc-600 font-mono bg-zinc-800 px-2 py-0.5 rounded">
-          {niche.keyword}
-        </div>
       </div>
 
       {niche.dataSignals && niche.dataSignals.length > 0 && (
@@ -201,12 +222,13 @@ function NicheCard({ niche, onResearch }: { niche: Niche; onResearch: (kw: strin
           ))}
         </div>
       )}
+
       <button
         onClick={() => onResearch(niche.keyword)}
-        className="w-full flex items-center justify-center gap-2 bg-zinc-800 hover:bg-emerald-600 text-zinc-300 hover:text-white py-2 rounded-lg text-xs font-medium transition-colors"
+        className="w-full flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white py-2 rounded-lg text-xs font-medium transition-colors"
       >
         <Search size={12} />
-        Onderzoek {niche.name}
+        Zoek producten voor {niche.name}
       </button>
     </div>
   )
