@@ -1,6 +1,6 @@
 'use client'
-import { useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { useState, useEffect, Suspense } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { Search, TrendingUp, Loader2, Star, ShoppingCart, Zap, Rocket } from 'lucide-react'
 
 type Product = {
@@ -19,13 +19,21 @@ type Product = {
 
 type TrendsData = { score: number; context: string }
 
-export default function ResearchPage() {
+function ResearchContent() {
   const router = useRouter()
+  const params = useSearchParams()
   const [keyword, setKeyword] = useState('')
   const [loading, setLoading] = useState(false)
   const [products, setProducts] = useState<Product[]>([])
   const [trends, setTrends] = useState<TrendsData | null>(null)
   const [error, setError] = useState('')
+
+  useEffect(() => {
+    const kw = params.get('keyword')
+    if (kw) {
+      setKeyword(kw)
+    }
+  }, [params])
 
   function launchProduct(p: Product) {
     router.push(`/dashboard/launch?product=${encodeURIComponent(JSON.stringify(p))}`)
@@ -141,6 +149,14 @@ export default function ResearchPage() {
         </div>
       )}
     </div>
+  )
+}
+
+export default function ResearchPage() {
+  return (
+    <Suspense fallback={<div className="p-8 text-zinc-500 text-sm">Laden...</div>}>
+      <ResearchContent />
+    </Suspense>
   )
 }
 

@@ -1,8 +1,9 @@
 import Link from 'next/link'
-import { BarChart2, Search, Package, Megaphone, Store, Settings, Rocket } from 'lucide-react'
+import { BarChart2, Search, Package, Megaphone, Store, Settings, Rocket, Compass } from 'lucide-react'
 
 const nav = [
   { href: '/dashboard', label: 'Overzicht', icon: BarChart2 },
+  { href: '/dashboard/niches', label: 'Niche Finder', icon: Compass },
   { href: '/dashboard/research', label: 'Research', icon: Search },
   { href: '/dashboard/launch', label: 'Launch Studio', icon: Rocket },
   { href: '/dashboard/products', label: 'Producten', icon: Package },
